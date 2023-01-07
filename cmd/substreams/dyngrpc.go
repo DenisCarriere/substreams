@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"time"
@@ -61,13 +62,34 @@ func runDyn(cmd *cobra.Command, args []string) error {
 type Service struct {
 	bg *bindgen.Bindgen
 	vm *wasmedge.VM
+
+	kv map[string]string
 }
 
 func NewService(wasmFile string) (*Service, error) {
+	srv := &Service{kv: map[string]string{
+		"key1": "value1",
+	}}
 	// See: https://github.com/second-state/WasmEdge-go-examples/blob/master/wasmedge-bindgen/go_BindgenFuncs/bindgen_funcs.go
 	wasmedge.SetLogErrorLevel()
 	conf := wasmedge.NewConfigure(wasmedge.WASI)
 	vm := wasmedge.NewVMWithConfig(conf)
+
+	impobj := wasmedge.NewModule("host")
+	hostftype := wasmedge.NewFunctionType(
+		[]wasmedge.ValType{
+			wasmedge.ValType_I32,
+			wasmedge.ValType_I32,
+			wasmedge.ValType_I32,
+		},
+		[]wasmedge.ValType{
+			wasmedge.ValType_I32,
+		})
+	hostprint := wasmedge.NewFunction(hostftype, srv.getKey, nil, 0)
+	hostftype.Release()
+	impobj.AddFunction("get_key", hostprint)
+	vm.RegisterModule(impobj)
+
 	wasi := vm.GetImportModule(wasmedge.WASI)
 	wasi.InitWasi(nil, nil, nil)
 	if err := vm.LoadWasmFile(wasmFile); err != nil {
@@ -81,10 +103,47 @@ func NewService(wasmFile string) (*Service, error) {
 	if err := bg.GetVm().Instantiate(); err != nil {
 		return nil, fmt.Errorf("error instantiating VM: %w", err)
 	}
-	return &Service{
-		bg: bg,
-		vm: vm,
-	}, nil
+	srv.bg = bg
+	srv.vm = vm
+	return srv, nil
+}
+
+func (s *Service) getKey(_ interface{}, callframe *wasmedge.CallingFrame, params []interface{}) ([]interface{}, wasmedge.Result) {
+	// As in: https://github.com/second-state/WasmEdge-go-examples/blob/master/go_HostFunc/hostfunc.go
+	mem := callframe.GetMemoryByIndex(0)
+
+	keyPtr := params[0].(int32)
+	keySize := params[1].(int32)
+	data, _ := mem.GetData(uint(keyPtr), uint(keySize))
+	key := make([]byte, keySize)
+
+	copy(key, data)
+
+	val, found := s.kv[string(key)]
+	if !found {
+		return []interface{}{int32(0)}, wasmedge.Result_Success
+	}
+
+	valuePtr := s.allocate(int32(len(val)))
+	data, _ = mem.GetData(uint(valuePtr), uint(len(val)))
+
+	copy(data, val)
+
+	outputPtr := params[2].(int32)
+	data, _ = mem.GetData(uint(outputPtr), uint(8))
+	binary.LittleEndian.PutUint32(data[0:4], uint32(valuePtr))
+	binary.LittleEndian.PutUint32(data[4:], uint32(len(val)))
+
+	return []interface{}{1}, wasmedge.Result_Success
+}
+
+func (s *Service) allocate(size int32) int32 {
+	allocateResult, err := s.vm.Execute("allocate", size)
+	if err != nil {
+		panic(err)
+	}
+	pointerOfPointers := allocateResult[0].(int32)
+	return pointerOfPointers
 }
 
 type Handler struct {

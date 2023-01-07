@@ -3,7 +3,13 @@ syntax = "proto3";
 // run:
 //   go install -v ./cmd/substreams && substreams dyngrpc
 // then, in another tab, run:
-//   grpcurl -plaintext -proto mycustomer.proto -d '{"input": "boo123"}' localhost:7878 sf.mycustomer.v1.Eth.Transfers
+//   grpcurl -plaintext -proto mycustomer.proto -d '{"input": "key1"}' localhost:7878 sf.mycustomer.v1.Eth.Transfers
+// yields:
+//    {"output": "value1"}
+// then:
+//   grpcurl -plaintext -proto mycustomer.proto -d '{"input": "key2"}' localhost:7878 sf.mycustomer.v1.Eth.Transfers
+// yields:
+//    {"output": "not found"}
 
 package sf.mycustomer.v1;
 
