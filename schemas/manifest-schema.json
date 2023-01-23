@@ -1,6 +1,7 @@
 {
   "name": "Substreams Manifest Schema",
   "description": "A Schema to support in making Substreams manifest files",
+  "$schema": "http://json-schema.org/draft-04/schema#",
   "type": "object",
   "properties" : {
     "specVersion" : {
@@ -164,9 +165,10 @@
         "required": ["kind", "name", "inputs"],
         "additionalProperties": false
       },
-      "additionalItems": false
+      "additionalItems": false,
+      "minItems": 1
     }
   },
-  "required": ["specVersion", "package", "protobuf", "binaries"],
+  "required": ["specVersion", "package", "protobuf", "binaries", "modules"],
   "additionalProperties": false
 }
